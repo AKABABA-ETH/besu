@@ -30,6 +30,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import org.hyperledger.besu.consensus.common.bft.BftBlockHashing;
+import org.hyperledger.besu.consensus.common.bft.BftContext;
 import org.hyperledger.besu.consensus.common.bft.BftExtraData;
 import org.hyperledger.besu.consensus.common.bft.BftExtraDataCodec;
 import org.hyperledger.besu.consensus.common.bft.BftProtocolSchedule;
@@ -37,7 +38,6 @@ import org.hyperledger.besu.consensus.common.bft.ConsensusRoundIdentifier;
 import org.hyperledger.besu.consensus.common.bft.RoundTimer;
 import org.hyperledger.besu.consensus.common.bft.blockcreation.BftBlockCreator;
 import org.hyperledger.besu.consensus.common.bft.payload.SignedData;
-import org.hyperledger.besu.consensus.qbft.QbftContext;
 import org.hyperledger.besu.consensus.qbft.QbftExtraDataCodec;
 import org.hyperledger.besu.consensus.qbft.messagewrappers.RoundChange;
 import org.hyperledger.besu.consensus.qbft.network.QbftMessageTransmitter;
@@ -106,6 +106,7 @@ public class QbftRoundTest {
   @Mock private RoundTimer roundTimer;
   @Mock private ProtocolSpec protocolSpec;
   @Mock private BlockImporter blockImporter;
+  @Mock private BlockHeader parentHeader;
 
   @Captor private ArgumentCaptor<Block> blockCaptor;
 
@@ -123,7 +124,7 @@ public class QbftRoundTest {
             blockChain,
             worldStateArchive,
             setupContextWithBftExtraDataEncoder(
-                QbftContext.class, emptyList(), new QbftExtraDataCodec()),
+                BftContext.class, emptyList(), new QbftExtraDataCodec()),
             new BadBlockManager());
 
     when(messageValidator.validateProposal(any())).thenReturn(true);
@@ -139,7 +140,7 @@ public class QbftRoundTest {
     final BlockHeader header = headerTestFixture.buildHeader();
     proposedBlock = new Block(header, new BlockBody(emptyList(), emptyList()));
 
-    when(blockCreator.createBlock(anyLong()))
+    when(blockCreator.createBlock(anyLong(), any()))
         .thenReturn(
             new BlockCreationResult(
                 proposedBlock, new TransactionSelectionResults(), new BlockCreationTiming()));
@@ -166,7 +167,8 @@ public class QbftRoundTest {
         messageFactory,
         transmitter,
         roundTimer,
-        bftExtraDataCodec);
+        bftExtraDataCodec,
+        parentHeader);
     verify(roundTimer, times(1)).startTimer(roundIdentifier);
   }
 
@@ -184,7 +186,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     round.handleProposalMessage(
         messageFactory.createProposal(
@@ -207,7 +210,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     round.createAndSendProposalMessage(15);
     verify(transmitter, times(1))
@@ -231,7 +235,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
     round.createAndSendProposalMessage(15);
     verify(transmitter, times(1))
         .multicastProposal(
@@ -254,7 +259,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     final Hash commitSealHash =
         new BftBlockHashing(new QbftExtraDataCodec())
@@ -288,7 +294,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     round.startRoundWith(new RoundChangeArtifacts(emptyList(), Optional.empty()), 15);
     verify(transmitter, times(1))
@@ -311,7 +318,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     final SignedData<PreparePayload> preparedPayload =
         messageFactory.createPrepare(priorRoundChange, proposedBlock.getHash()).getSignedPayload();
@@ -359,7 +367,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     final RoundChange roundChange =
         messageFactory.createRoundChange(roundIdentifier, Optional.empty());
@@ -398,7 +407,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
     round.createAndSendProposalMessage(15);
     verify(minedBlockObserver).blockMined(any());
   }
@@ -419,7 +429,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     round.handleCommitMessage(
         messageFactory.createCommit(roundIdentifier, proposedBlock.getHash(), remoteCommitSeal));
@@ -444,7 +455,8 @@ public class QbftRoundTest {
             messageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     round.handleCommitMessage(
         messageFactory.createCommit(roundIdentifier, proposedBlock.getHash(), remoteCommitSeal));
@@ -473,7 +485,8 @@ public class QbftRoundTest {
             throwingMessageFactory,
             transmitter,
             roundTimer,
-            bftExtraDataCodec);
+            bftExtraDataCodec,
+            parentHeader);
 
     round.handleProposalMessage(
         messageFactory.createProposal(

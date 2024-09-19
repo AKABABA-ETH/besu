@@ -15,6 +15,7 @@
 package org.hyperledger.besu.ethereum.eth.transactions;
 
 import org.hyperledger.besu.datatypes.TransactionType;
+import org.hyperledger.besu.ethereum.eth.transactions.layered.AddReason;
 import org.hyperledger.besu.ethereum.transaction.TransactionInvalidReason;
 import org.hyperledger.besu.metrics.BesuMetricCategory;
 import org.hyperledger.besu.metrics.ReplaceableDoubleSupplier;
@@ -37,12 +38,14 @@ public class TransactionPoolMetrics {
   public static final String ADDED_COUNTER_NAME = "added_total";
   public static final String REMOVED_COUNTER_NAME = "removed_total";
   public static final String REJECTED_COUNTER_NAME = "rejected_total";
+  public static final String PENALIZED_COUNTER_NAME = "penalized_total";
   public static final String EXPIRED_MESSAGES_COUNTER_NAME = "messages_expired_total";
   private static final int SKIPPED_MESSAGES_LOGGING_THRESHOLD = 1000;
   private final MetricsSystem metricsSystem;
   private final LabelledMetric<Counter> addedCounter;
   private final LabelledMetric<Counter> removedCounter;
   private final LabelledMetric<Counter> rejectedCounter;
+  private final LabelledMetric<Counter> penalizedCounter;
   private final LabelledGauge spaceUsed;
   private final LabelledGauge transactionCount;
   private final LabelledGauge transactionCountByType;
@@ -66,6 +69,7 @@ public class TransactionPoolMetrics {
             "Count of transactions added to the transaction pool",
             "source",
             "priority",
+            "reason",
             "layer");
 
     removedCounter =
@@ -86,6 +90,15 @@ public class TransactionPoolMetrics {
             "source",
             "priority",
             "reason",
+            "layer");
+
+    penalizedCounter =
+        metricsSystem.createLabelledCounter(
+            BesuMetricCategory.TRANSACTION_POOL,
+            PENALIZED_COUNTER_NAME,
+            "Count of penalized transactions in the transaction pool",
+            "source",
+            "priority",
             "layer");
 
     spaceUsed =
@@ -204,11 +217,13 @@ public class TransactionPoolMetrics {
             SKIPPED_MESSAGES_LOGGING_THRESHOLD));
   }
 
-  public void incrementAdded(final PendingTransaction pendingTransaction, final String layer) {
+  public void incrementAdded(
+      final PendingTransaction pendingTransaction, final AddReason addReason, final String layer) {
     addedCounter
         .labels(
             location(pendingTransaction.isReceivedFromLocalSource()),
             priority(pendingTransaction.hasPriority()),
+            addReason.label(),
             layer)
         .inc();
   }
@@ -243,6 +258,15 @@ public class TransactionPoolMetrics {
     rejectedCounter
         .labels(
             location(receivedFromLocalSource), priority(hasPriority), rejectReason.name(), layer)
+        .inc();
+  }
+
+  public void incrementPenalized(final PendingTransaction pendingTransaction, final String layer) {
+    penalizedCounter
+        .labels(
+            location(pendingTransaction.isReceivedFromLocalSource()),
+            priority(pendingTransaction.hasPriority()),
+            layer)
         .inc();
   }
 

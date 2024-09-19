@@ -52,12 +52,20 @@ import javax.annotation.Nullable;
 import org.apache.tuweni.bytes.Bytes;
 
 /** Code V1 Validation */
-public final class CodeV1Validation {
+public class CodeV1Validation implements EOFValidator {
 
   static final int MAX_STACK_HEIGHT = 1024;
 
-  private CodeV1Validation() {
-    // to prevent instantiation
+  /** Maximum size of the code stream that can be produced, including all header bytes. */
+  protected final int maxContainerSize;
+
+  /**
+   * Create a new container, with a configurable maximim container size.
+   *
+   * @param maxContainerSize the maximum size of any container.
+   */
+  public CodeV1Validation(final int maxContainerSize) {
+    this.maxContainerSize = maxContainerSize;
   }
 
   /**
@@ -67,20 +75,37 @@ public final class CodeV1Validation {
    * @param layout The parsed EOFLayout of the code
    * @return either null, indicating no error, or a String describing the validation error.
    */
-  public static String validate(final EOFLayout layout) {
+  @SuppressWarnings(
+      "ReferenceEquality") // comparison `container != layout` is deliberate and correct
+  @Override
+  public String validate(final EOFLayout layout) {
+    if (layout.container().size() > maxContainerSize) {
+      return "container_size_above_limit of " + maxContainerSize;
+    }
+
     Queue<EOFLayout> workList = new ArrayDeque<>(layout.getSubcontainerCount());
     workList.add(layout);
 
     while (!workList.isEmpty()) {
       EOFLayout container = workList.poll();
       workList.addAll(List.of(container.subContainers()));
+      if (container != layout && container.containerMode().get() == null) {
+        return "orphan_subcontainer #" + layout.indexOfSubcontainer(container);
+      }
+      if (container.containerMode().get() != RUNTIME
+          && container.data().size() != container.dataLength()) {
+        return "Incomplete data section "
+            + (container == layout
+                ? " at root"
+                : " in container #" + layout.indexOfSubcontainer(container));
+      }
 
-      final String codeValidationError = CodeV1Validation.validateCode(container);
+      final String codeValidationError = validateCode(container);
       if (codeValidationError != null) {
         return codeValidationError;
       }
 
-      final String stackValidationError = CodeV1Validation.validateStack(container);
+      final String stackValidationError = validateStack(container);
       if (stackValidationError != null) {
         return stackValidationError;
       }
@@ -95,13 +120,14 @@ public final class CodeV1Validation {
    * @param eofLayout The EOF Layout
    * @return validation code, null otherwise.
    */
-  public static String validateCode(final EOFLayout eofLayout) {
+  @Override
+  public String validateCode(final EOFLayout eofLayout) {
     if (!eofLayout.isValid()) {
       return "Invalid EOF container - " + eofLayout.invalidReason();
     }
     for (CodeSection cs : eofLayout.codeSections()) {
       var validation =
-          CodeV1Validation.validateCode(
+          validateCode(
               eofLayout.container().slice(cs.getEntryPoint(), cs.getLength()), cs, eofLayout);
       if (validation != null) {
         return validation;
@@ -116,7 +142,7 @@ public final class CodeV1Validation {
    * @param code the code section code
    * @return null if valid, otherwise a string containing an error reason.
    */
-  static String validateCode(
+  String validateCode(
       final Bytes code, final CodeSection thisCodeSection, final EOFLayout eofLayout) {
     final int size = code.size();
     final BitSet rjumpdests = new BitSet(size);
@@ -131,7 +157,7 @@ public final class CodeV1Validation {
       opcodeInfo = V1_OPCODES[operationNum];
       if (!opcodeInfo.valid()) {
         // undefined instruction
-        return format("Invalid Instruction 0x%02x", operationNum);
+        return format("undefined_instruction 0x%02x", operationNum);
       }
       pos += 1;
       int pcPostInstruction = pos;
@@ -142,7 +168,7 @@ public final class CodeV1Validation {
             eofLayout.containerMode().set(RUNTIME);
           } else if (!eofContainerMode.equals(RUNTIME)) {
             return format(
-                "%s is only a valid opcode in containers used for runtime operations.",
+                "incompatible_container_kind opcode %s is only valid for runtime.",
                 opcodeInfo.name());
           }
           break;
@@ -184,54 +210,55 @@ public final class CodeV1Validation {
           break;
         case DataLoadNOperation.OPCODE:
           if (pos + 2 > size) {
-            return "Truncated DataLoadN offset";
+            return "truncated_instruction DATALOADN";
           }
           pcPostInstruction += 2;
           final int dataLoadOffset = readBigEndianU16(pos, rawCode);
           // only verfy the last byte of the load is within the minimum data
           if (dataLoadOffset > eofLayout.dataLength() - 32) {
-            return "DataLoadN loads data past minimum data length";
+            return "invalid_dataloadn_index %d + 32 > %d"
+                .formatted(dataLoadOffset, eofLayout.dataLength());
           }
           break;
         case RelativeJumpOperation.OPCODE, RelativeJumpIfOperation.OPCODE:
           if (pos + 2 > size) {
-            return "Truncated relative jump offset";
+            return "truncated_instruction RJUMP";
           }
           pcPostInstruction += 2;
           final int offset = readBigEndianI16(pos, rawCode);
           final int rjumpdest = pcPostInstruction + offset;
           if (rjumpdest < 0 || rjumpdest >= size) {
-            return "Relative jump destination out of bounds";
+            return "invalid_rjump_destination out of bounds";
           }
           rjumpdests.set(rjumpdest);
           break;
         case RelativeJumpVectorOperation.OPCODE:
           pcPostInstruction += 1;
           if (pcPostInstruction > size) {
-            return "Truncated jump table";
+            return "truncated_instruction RJUMPV";
           }
           int jumpBasis = pcPostInstruction;
           final int jumpTableSize = RelativeJumpVectorOperation.getVectorSize(code, pos);
           pcPostInstruction += 2 * jumpTableSize;
           if (pcPostInstruction > size) {
-            return "Truncated jump table";
+            return "truncated_instruction RJUMPV";
           }
           for (int offsetPos = jumpBasis; offsetPos < pcPostInstruction; offsetPos += 2) {
             final int rjumpvOffset = readBigEndianI16(offsetPos, rawCode);
             final int rjumpvDest = pcPostInstruction + rjumpvOffset;
             if (rjumpvDest < 0 || rjumpvDest >= size) {
-              return "Relative jump destination out of bounds";
+              return "invalid_rjump_destination out of bounds";
             }
             rjumpdests.set(rjumpvDest);
           }
           break;
         case CallFOperation.OPCODE:
           if (pos + 2 > size) {
-            return "Truncated CALLF";
+            return "truncated_instruction CALLF";
           }
           int section = readBigEndianU16(pos, rawCode);
           if (section >= eofLayout.getCodeSectionCount()) {
-            return "CALLF to non-existent section - " + Integer.toHexString(section);
+            return "invalid_code_section_index CALLF to " + Integer.toHexString(section);
           }
           if (!eofLayout.getCodeSection(section).returning) {
             return "CALLF to non-returning section - " + Integer.toHexString(section);
@@ -243,17 +270,18 @@ public final class CodeV1Validation {
           break;
         case JumpFOperation.OPCODE:
           if (pos + 2 > size) {
-            return "Truncated JUMPF";
+            return "truncated_instruction JUMPF";
           }
           int targetSection = readBigEndianU16(pos, rawCode);
           if (targetSection >= eofLayout.getCodeSectionCount()) {
-            return "JUMPF to non-existent section - " + Integer.toHexString(targetSection);
+            return "invalid_code_section_index JUMPF - " + Integer.toHexString(targetSection);
           }
           CodeSection targetCodeSection = eofLayout.getCodeSection(targetSection);
-          if (targetCodeSection.isReturning()
-              && thisCodeSection.getOutputs() < targetCodeSection.getOutputs()) {
+          if (targetCodeSection.isReturning() && !thisCodeSection.isReturning()) {
+            return "invalid_non_returning_flag non-returning JUMPF source must have non-returning target";
+          } else if (thisCodeSection.getOutputs() < targetCodeSection.getOutputs()) {
             return format(
-                "JUMPF targeting a returning code section %2x with more outputs %d than current section's outputs %d",
+                "jumpf_destination_incompatible_outputs target %2x with more outputs %d than current section's outputs %d",
                 targetSection, targetCodeSection.getOutputs(), thisCodeSection.getOutputs());
           }
           hasReturningOpcode |= eofLayout.getCodeSection(targetSection).isReturning();
@@ -262,13 +290,13 @@ public final class CodeV1Validation {
         case EOFCreateOperation.OPCODE:
           if (pos + 1 > size) {
             return format(
-                "Dangling immediate for %s at pc=%d",
+                "truncated_instruction dangling immediate for %s at pc=%d",
                 opcodeInfo.name(), pos - opcodeInfo.pcAdvance());
           }
           int subcontainerNum = rawCode[pos] & 0xff;
           if (subcontainerNum >= eofLayout.getSubcontainerCount()) {
             return format(
-                "%s refers to non-existent subcontainer %d at pc=%d",
+                "invalid_container_section_index %s refers to non-existent subcontainer %d at pc=%d",
                 opcodeInfo.name(), subcontainerNum, pos - opcodeInfo.pcAdvance());
           }
           EOFLayout subContainer = eofLayout.getSubcontainer(subcontainerNum);
@@ -277,7 +305,7 @@ public final class CodeV1Validation {
             subContainer.containerMode().set(INITCODE);
           } else if (subcontainerMode == RUNTIME) {
             return format(
-                "subcontainer %d cannot be used both as initcode and runtime", subcontainerNum);
+                "incompatible_container_kind subcontainer %d should be initcode", subcontainerNum);
           }
           if (subContainer.dataLength() != subContainer.data().size()) {
             return format(
@@ -294,17 +322,18 @@ public final class CodeV1Validation {
             eofLayout.containerMode().set(INITCODE);
           } else if (!eofContainerMode.equals(INITCODE)) {
             return format(
-                "%s is only a valid opcode in containers used for initcode", opcodeInfo.name());
+                "incompatible_container_kind opcode %s is only valid for initcode",
+                opcodeInfo.name());
           }
           if (pos + 1 > size) {
             return format(
-                "Dangling immediate for %s at pc=%d",
+                "truncated_instruction dangling immediate for %s at pc=%d",
                 opcodeInfo.name(), pos - opcodeInfo.pcAdvance());
           }
           int returnedContractNum = rawCode[pos] & 0xff;
           if (returnedContractNum >= eofLayout.getSubcontainerCount()) {
             return format(
-                "%s refers to non-existent subcontainer %d at pc=%d",
+                "invalid_container_section_index %s refers to non-existent subcontainer %d at pc=%d",
                 opcodeInfo.name(), returnedContractNum, pos - opcodeInfo.pcAdvance());
           }
           EOFLayout returnedContract = eofLayout.getSubcontainer(returnedContractNum);
@@ -313,7 +342,8 @@ public final class CodeV1Validation {
             returnedContract.containerMode().set(RUNTIME);
           } else if (returnedContractMode.equals(INITCODE)) {
             return format(
-                "subcontainer %d cannot be used both as initcode and runtime", returnedContractNum);
+                "incompatible_container_kind subcontainer %d should be runtime",
+                returnedContractNum);
           }
           pcPostInstruction += 1;
           break;
@@ -321,9 +351,9 @@ public final class CodeV1Validation {
           // a few opcodes have potentially dangling immediates
           if (opcodeInfo.pcAdvance() > 1) {
             pcPostInstruction += opcodeInfo.pcAdvance() - 1;
-            if (pcPostInstruction >= size) {
+            if (pcPostInstruction > size) {
               return format(
-                  "Dangling immediate for %s at pc=%d",
+                  "truncated_instruction dangling immediate for %s at pc=%d",
                   opcodeInfo.name(), pos - opcodeInfo.pcAdvance());
             }
           }
@@ -334,25 +364,26 @@ public final class CodeV1Validation {
     }
     if (thisCodeSection.isReturning() != hasReturningOpcode) {
       return thisCodeSection.isReturning()
-          ? "No RETF or qualifying JUMPF"
-          : "Non-returing section has RETF or JUMPF into returning section";
+          ? "unreachable_code_sections no RETF or qualifying JUMPF"
+          : "invalid_non_returning_flag RETF or JUMPF into returning section";
     }
     if (!opcodeInfo.terminal()) {
-      return "No terminating instruction";
+      return "missing_stop_opcode No terminating instruction";
     }
     if (rjumpdests.intersects(immediates)) {
-      return "Relative jump destinations targets invalid immediate data";
+      return "invalid_rjump_destination targets immediate data";
     }
     return null;
   }
 
   @Nullable
-  static String validateStack(final EOFLayout eofLayout) {
+  @Override
+  public String validateStack(final EOFLayout eofLayout) {
     WorkList workList = new WorkList(eofLayout.getCodeSectionCount());
     workList.put(0);
     int sectionToValidatie = workList.take();
     while (sectionToValidatie >= 0) {
-      var validation = CodeV1Validation.validateStack(sectionToValidatie, eofLayout, workList);
+      var validation = validateStack(sectionToValidatie, eofLayout, workList);
       if (validation != null) {
         return validation;
       }
@@ -376,7 +407,7 @@ public final class CodeV1Validation {
    * @return null if valid, otherwise an error string providing the validation error.
    */
   @Nullable
-  static String validateStack(
+  String validateStack(
       final int codeSectionToValidate, final EOFLayout eofLayout, final WorkList workList) {
     if (!eofLayout.isValid()) {
       return "EOF Layout invalid - " + eofLayout.invalidReason();
@@ -445,7 +476,7 @@ public final class CodeV1Validation {
 
         int nextPC;
         if (!opcodeInfo.valid()) {
-          return format("Invalid Instruction 0x%02x", thisOp);
+          return format("undefined_instruction 0x%02x", thisOp);
         }
         nextPC = currentPC + pcAdvance;
 
@@ -456,13 +487,15 @@ public final class CodeV1Validation {
         }
         if (stack_max[currentPC] < 0) {
           return format(
-              "Code that was not forward referenced in section 0x%x pc %d",
+              "unreachable_instructions section 0x%x pc %d was not forward referenced",
               codeSectionToValidate, currentPC);
         }
+        currentMin = min(stack_min[currentPC], currentMin);
+        currentMax = max(stack_max[currentPC], currentMax);
 
         if (stackInputs > currentMin) {
           return format(
-              "Operation 0x%02X requires stack of %d but may only have %d items",
+              "stack_underflow operation 0x%02X wants stack of %d but may only have %d",
               thisOp, stackInputs, currentMin);
         }
 
@@ -486,13 +519,13 @@ public final class CodeV1Validation {
             } else {
               if (stack_min[targetPC] != currentMin) {
                 return format(
-                    "Stack minimum violation on backwards jump from %d to %d, %d != %d",
-                    currentPC, targetPC, stack_min[currentPC], currentMax);
+                    "stack_height_mismatch backwards RJUMP from %d to %d, min %d != %d",
+                    currentPC, targetPC, stack_min[targetPC], currentMin);
               }
               if (stack_max[targetPC] != currentMax) {
                 return format(
-                    "Stack maximum violation on backwards jump from %d to %d, %d != %d",
-                    currentPC, targetPC, stack_max[currentPC], currentMax);
+                    "stack_height_mismatch backwards RJUMP from %d to %d, max %d != %d",
+                    currentPC, targetPC, stack_max[targetPC], currentMax);
               }
             }
 
@@ -513,13 +546,13 @@ public final class CodeV1Validation {
             } else {
               if (stack_min[targetPCi] != currentMin) {
                 return format(
-                    "Stack minimum violation on backwards jump from %d to %d, %d != %d",
-                    currentPC, targetPCi, stack_min[currentPC], currentMin);
+                    "stack_height_mismatch backwards RJUMPI from %d to %d, min %d != %d",
+                    currentPC, targetPCi, stack_min[targetPCi], currentMin);
               }
               if (stack_max[targetPCi] != currentMax) {
                 return format(
-                    "Stack maximum violation on backwards jump from %d to %d, %d != %d",
-                    currentPC, targetPCi, stack_max[currentPC], currentMax);
+                    "stack_height_mismatch backwards RJUMPI from %d to %d, max %d != %d",
+                    currentPC, targetPCi, stack_max[targetPCi], currentMax);
               }
             }
             break;
@@ -539,13 +572,13 @@ public final class CodeV1Validation {
               } else {
                 if (stack_min[targetPCv] != currentMin) {
                   return format(
-                      "Stack minimum violation on backwards jump from %d to %d, %d != %d",
-                      currentPC, targetPCv, stack_min[currentPC], currentMin);
+                      "stack_height_mismatch backwards RJUMPV from %d to %d, min %d != %d",
+                      currentPC, targetPCv, stack_min[targetPCv], currentMin);
                 }
                 if (stack_max[targetPCv] != currentMax) {
                   return format(
-                      "Stack maximum violation on backwards jump from %d to %d, %d != %d",
-                      currentPC, targetPCv, stack_max[currentPC], currentMax);
+                      "stack_height_mismatch backwards RJUMPV from %d to %d, max %d != %d",
+                      currentPC, targetPCv, stack_max[targetPCv], currentMax);
                 }
               }
             }
@@ -560,7 +593,7 @@ public final class CodeV1Validation {
             if (stack_min[currentPC] != returnStackItems
                 || stack_min[currentPC] != stack_max[currentPC]) {
               return format(
-                  "RETF in section %d calculated height %d does not match configured return stack %d, min height %d, and max height %d",
+                  "stack_higher_than_outputs RETF in section %d calculated height %d does not match configured return stack %d, min height %d, and max height %d",
                   codeSectionToValidate,
                   currentMin,
                   returnStackItems,
@@ -591,9 +624,11 @@ public final class CodeV1Validation {
                     "JUMPF at section %d pc %d has a variable stack height %d/%d",
                     codeSectionToValidate, currentPC, currentMin, currentMax);
               }
-              if (currentMax != toValidate.outputs + targetCs.inputs - targetCs.outputs) {
+              int expectedMax = toValidate.outputs + targetCs.inputs - targetCs.outputs;
+              if (currentMax != expectedMax) {
                 return format(
-                    "JUMPF at section %d pc %d has incompatible stack height for returning section %d (%d != %d + %d - %d)",
+                    "%s JUMPF at section %d pc %d has incompatible stack height for returning section %d (%d != %d + %d - %d)",
+                    currentMax < expectedMax ? "stack_underflow" : "stack_higher_than_outputs",
                     codeSectionToValidate,
                     currentPC,
                     jumpFTargetSectionNum,
@@ -605,7 +640,7 @@ public final class CodeV1Validation {
             } else {
               if (currentMin < targetCs.getInputs()) {
                 return format(
-                    "JUMPF at section %d pc %d has insufficient minimum stack height for non returning section %d (%d != %d)",
+                    "stack_underflow JUMPF at section %d pc %d has insufficient minimum stack height for non returning section %d (%d != %d)",
                     codeSectionToValidate,
                     currentPC,
                     jumpFTargetSectionNum,
@@ -640,7 +675,7 @@ public final class CodeV1Validation {
 
       if (maxStackHeight != toValidate.maxStackHeight) {
         return format(
-            "Calculated max stack height (%d) does not match reported stack height (%d)",
+            "invalid_max_stack_height Calculated (%d) != reported (%d)",
             maxStackHeight, toValidate.maxStackHeight);
       }
       if (unusedBytes != 0) {

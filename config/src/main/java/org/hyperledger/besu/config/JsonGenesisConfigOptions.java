@@ -49,6 +49,8 @@ public class JsonGenesisConfigOptions implements GenesisConfigOptions {
   private static final String CHECKPOINT_CONFIG_KEY = "checkpoint";
   private static final String ZERO_BASE_FEE_KEY = "zerobasefee";
   private static final String FIXED_BASE_FEE_KEY = "fixedbasefee";
+  private static final String WITHDRAWAL_REQUEST_CONTRACT_ADDRESS_KEY =
+      "withdrawalrequestcontractaddress";
   private static final String DEPOSIT_CONTRACT_ADDRESS_KEY = "depositcontractaddress";
 
   private final ObjectNode configRoot;
@@ -289,6 +291,11 @@ public class JsonGenesisConfigOptions implements GenesisConfigOptions {
   }
 
   @Override
+  public OptionalLong getCancunEOFTime() {
+    return getOptionalLong("cancuneoftime");
+  }
+
+  @Override
   public OptionalLong getCancunTime() {
     return getOptionalLong("cancuntime");
   }
@@ -434,6 +441,13 @@ public class JsonGenesisConfigOptions implements GenesisConfigOptions {
   }
 
   @Override
+  public Optional<Address> getWithdrawalRequestContractAddress() {
+    Optional<String> inputAddress =
+        JsonUtil.getString(configRoot, WITHDRAWAL_REQUEST_CONTRACT_ADDRESS_KEY);
+    return inputAddress.map(Address::fromHexString);
+  }
+
+  @Override
   public Optional<Address> getDepositContractAddress() {
     Optional<String> inputAddress = JsonUtil.getString(configRoot, DEPOSIT_CONTRACT_ADDRESS_KEY);
     return inputAddress.map(Address::fromHexString);
@@ -461,6 +475,7 @@ public class JsonGenesisConfigOptions implements GenesisConfigOptions {
     getMergeNetSplitBlockNumber().ifPresent(l -> builder.put("mergeNetSplitBlock", l));
     getShanghaiTime().ifPresent(l -> builder.put("shanghaiTime", l));
     getCancunTime().ifPresent(l -> builder.put("cancunTime", l));
+    getCancunEOFTime().ifPresent(l -> builder.put("cancunEOFTime", l));
     getPragueTime().ifPresent(l -> builder.put("pragueTime", l));
     getPragueEOFTime().ifPresent(l -> builder.put("pragueEOFTime", l));
     getTerminalBlockNumber().ifPresent(l -> builder.put("terminalBlockNumber", l));
@@ -486,6 +501,8 @@ public class JsonGenesisConfigOptions implements GenesisConfigOptions {
     getEvmStackSize().ifPresent(l -> builder.put("evmstacksize", l));
     getEcip1017EraRounds().ifPresent(l -> builder.put("ecip1017EraRounds", l));
 
+    getWithdrawalRequestContractAddress()
+        .ifPresent(l -> builder.put("withdrawalRequestContractAddress", l));
     getDepositContractAddress().ifPresent(l -> builder.put("depositContractAddress", l));
 
     if (isClique()) {
@@ -610,6 +627,7 @@ public class JsonGenesisConfigOptions implements GenesisConfigOptions {
         Stream.of(
             getShanghaiTime(),
             getCancunTime(),
+            getCancunEOFTime(),
             getPragueTime(),
             getPragueEOFTime(),
             getFutureEipsTime(),

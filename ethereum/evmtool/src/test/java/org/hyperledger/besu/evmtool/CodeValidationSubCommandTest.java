@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
+import java.io.PrintWriter;
 
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
@@ -44,35 +44,36 @@ class CodeValidationSubCommandTest {
   void testSingleValidViaInput() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(CODE_STOP_ONLY.getBytes(UTF_8));
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     codeValidateSubCommand.run();
-    assertThat(baos.toString(UTF_8)).contains("OK 00\n");
+    assertThat(baos.toString(UTF_8)).contains("OK 1/0/0\n");
   }
 
   @Test
   void testSingleInvalidViaInput() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(CODE_BAD_MAGIC.getBytes(UTF_8));
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     codeValidateSubCommand.run();
-    assertThat(baos.toString(UTF_8)).contains("err: layout - EOF header byte 1 incorrect\n");
+    assertThat(baos.toString(UTF_8))
+        .contains("err: layout - invalid_magic EOF header byte 1 incorrect\n");
   }
 
   @Test
   void testMultipleViaInput() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(CODE_MULTIPLE.getBytes(UTF_8));
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     codeValidateSubCommand.run();
     assertThat(baos.toString(UTF_8))
         .contains(
             """
-                OK 00
-                err: layout - EOF header byte 1 incorrect
-                OK 5f5ff3
+                OK 1/0/0
+                err: layout - invalid_magic EOF header byte 1 incorrect
+                OK 1/0/0
                 """);
   }
 
@@ -80,41 +81,42 @@ class CodeValidationSubCommandTest {
   void testSingleValidViaCli() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(new byte[0]);
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     final CommandLine cmd = new CommandLine(codeValidateSubCommand);
     cmd.parseArgs(CODE_STOP_ONLY);
     codeValidateSubCommand.run();
-    assertThat(baos.toString(UTF_8)).contains("OK 00\n");
+    assertThat(baos.toString(UTF_8)).contains("OK 1/0/0\n");
   }
 
   @Test
   void testSingleInvalidViaCli() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(new byte[0]);
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     final CommandLine cmd = new CommandLine(codeValidateSubCommand);
     cmd.parseArgs(CODE_BAD_MAGIC);
     codeValidateSubCommand.run();
-    assertThat(baos.toString(UTF_8)).contains("err: layout - EOF header byte 1 incorrect\n");
+    assertThat(baos.toString(UTF_8))
+        .contains("err: layout - invalid_magic EOF header byte 1 incorrect\n");
   }
 
   @Test
   void testMultipleViaCli() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(new byte[0]);
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     final CommandLine cmd = new CommandLine(codeValidateSubCommand);
     cmd.parseArgs(CODE_STOP_ONLY, CODE_BAD_MAGIC, CODE_RETURN_ONLY);
     codeValidateSubCommand.run();
     assertThat(baos.toString(UTF_8))
         .contains(
             """
-                OK 00
-                err: layout - EOF header byte 1 incorrect
-                OK 5f5ff3
+                OK 1/0/0
+                err: layout - invalid_magic EOF header byte 1 incorrect
+                OK 1/0/0
                 """);
   }
 
@@ -122,24 +124,24 @@ class CodeValidationSubCommandTest {
   void testCliEclipsesInput() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(CODE_STOP_ONLY.getBytes(UTF_8));
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     final CommandLine cmd = new CommandLine(codeValidateSubCommand);
     cmd.parseArgs(CODE_RETURN_ONLY);
     codeValidateSubCommand.run();
-    assertThat(baos.toString(UTF_8)).contains("OK 5f5ff3\n");
+    assertThat(baos.toString(UTF_8)).contains("OK 1/0/0\n");
   }
 
   @Test
   void testInteriorCommentsSkipped() {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais = new ByteArrayInputStream(new byte[0]);
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     final CommandLine cmd = new CommandLine(codeValidateSubCommand);
     cmd.parseArgs(CODE_INTERIOR_COMMENTS);
     codeValidateSubCommand.run();
-    assertThat(baos.toString(UTF_8)).contains("OK 59595959e300015000,f8e4\n");
+    assertThat(baos.toString(UTF_8)).contains("OK 2/0/0\n");
   }
 
   @Test
@@ -147,15 +149,15 @@ class CodeValidationSubCommandTest {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     final ByteArrayInputStream bais =
         new ByteArrayInputStream(("# comment\n\n#blank line\n\n" + CODE_MULTIPLE).getBytes(UTF_8));
-    final CodeValidateSubCommand codeValidateSubCommand =
-        new CodeValidateSubCommand(bais, new PrintStream(baos));
+    EvmToolCommand parentCommand = new EvmToolCommand(bais, new PrintWriter(baos, true, UTF_8));
+    final CodeValidateSubCommand codeValidateSubCommand = new CodeValidateSubCommand(parentCommand);
     codeValidateSubCommand.run();
     assertThat(baos.toString(UTF_8))
         .isEqualTo(
             """
-                OK 00
-                err: layout - EOF header byte 1 incorrect
-                OK 5f5ff3
+                OK 1/0/0
+                err: layout - invalid_magic EOF header byte 1 incorrect
+                OK 1/0/0
                 """);
   }
 }
