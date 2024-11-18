@@ -33,9 +33,9 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.ipc.JsonRpcIpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.websocket.WebSocketConfiguration;
 import org.hyperledger.besu.ethereum.api.tls.FileBasedPasswordProvider;
 import org.hyperledger.besu.ethereum.core.AddressHelpers;
-import org.hyperledger.besu.ethereum.core.ImmutableMiningParameters;
-import org.hyperledger.besu.ethereum.core.ImmutableMiningParameters.MutableInitValues;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.ImmutableMiningConfiguration;
+import org.hyperledger.besu.ethereum.core.ImmutableMiningConfiguration.MutableInitValues;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.PrivacyParameters;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPoolConfiguration;
 import org.hyperledger.besu.ethereum.p2p.config.NetworkingConfiguration;
@@ -61,8 +61,8 @@ public class BesuNodeConfigurationBuilder {
 
   private String name;
   private Optional<Path> dataPath = Optional.empty();
-  private MiningParameters miningParameters =
-      ImmutableMiningParameters.builder()
+  private MiningConfiguration miningConfiguration =
+      ImmutableMiningConfiguration.builder()
           .mutableInitValues(
               MutableInitValues.builder().coinbase(AddressHelpers.ofValue(1)).build())
           .build();
@@ -93,6 +93,7 @@ public class BesuNodeConfigurationBuilder {
   private boolean secp256K1Native = true;
   private boolean altbn128Native = true;
   private final List<String> plugins = new ArrayList<>();
+  private final List<String> requestedPlugins = new ArrayList<>();
   private final List<String> extraCLIOptions = new ArrayList<>();
   private List<String> staticNodes = new ArrayList<>();
   private boolean isDnsEnabled = false;
@@ -124,13 +125,14 @@ public class BesuNodeConfigurationBuilder {
   }
 
   public BesuNodeConfigurationBuilder miningEnabled(final boolean enabled) {
-    this.miningParameters = miningParameters.setMiningEnabled(enabled);
+    this.miningConfiguration = miningConfiguration.setMiningEnabled(enabled);
     this.jsonRpcConfiguration.addRpcApi(RpcApis.MINER.name());
     return this;
   }
 
-  public BesuNodeConfigurationBuilder miningConfiguration(final MiningParameters miningParameters) {
-    this.miningParameters = miningParameters;
+  public BesuNodeConfigurationBuilder miningConfiguration(
+      final MiningConfiguration miningConfiguration) {
+    this.miningConfiguration = miningConfiguration;
     this.jsonRpcConfiguration.addRpcApi(RpcApis.MINER.name());
     return this;
   }
@@ -448,6 +450,12 @@ public class BesuNodeConfigurationBuilder {
     return this;
   }
 
+  public BesuNodeConfigurationBuilder requestedPlugins(final List<String> requestedPlugins) {
+    this.requestedPlugins.clear();
+    this.requestedPlugins.addAll(requestedPlugins);
+    return this;
+  }
+
   public BesuNodeConfigurationBuilder extraCLIOptions(final List<String> extraCLIOptions) {
     this.extraCLIOptions.clear();
     this.extraCLIOptions.addAll(extraCLIOptions);
@@ -520,7 +528,7 @@ public class BesuNodeConfigurationBuilder {
     return new BesuNodeConfiguration(
         name,
         dataPath,
-        miningParameters,
+        miningConfiguration,
         transactionPoolConfiguration,
         jsonRpcConfiguration,
         Optional.of(engineRpcConfiguration),
@@ -545,6 +553,7 @@ public class BesuNodeConfigurationBuilder {
         secp256K1Native,
         altbn128Native,
         plugins,
+        requestedPlugins,
         extraCLIOptions,
         staticNodes,
         isDnsEnabled,

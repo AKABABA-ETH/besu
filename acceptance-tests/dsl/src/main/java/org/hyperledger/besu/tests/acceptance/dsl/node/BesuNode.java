@@ -18,7 +18,7 @@ import static java.util.Collections.unmodifiableList;
 import static org.apache.tuweni.io.file.Files.copyResource;
 
 import org.hyperledger.besu.cli.config.NetworkName;
-import org.hyperledger.besu.config.MergeConfigOptions;
+import org.hyperledger.besu.config.MergeConfiguration;
 import org.hyperledger.besu.crypto.KeyPair;
 import org.hyperledger.besu.crypto.KeyPairUtil;
 import org.hyperledger.besu.datatypes.Address;
@@ -27,7 +27,7 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.InProcessRpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.JsonRpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.ipc.JsonRpcIpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.websocket.WebSocketConfiguration;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.PrivacyParameters;
 import org.hyperledger.besu.ethereum.core.Util;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPoolConfiguration;
@@ -101,7 +101,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
   private final boolean revertReasonEnabled;
 
   private final String name;
-  private MiningParameters miningParameters;
+  private MiningConfiguration miningConfiguration;
   private TransactionPoolConfiguration txPoolConfiguration;
   private final List<String> runCommand;
   private PrivacyParameters privacyParameters = PrivacyParameters.DEFAULT;
@@ -128,6 +128,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
   private boolean useWsForJsonRpc = false;
   private String token = null;
   private final List<String> plugins = new ArrayList<>();
+  private final List<String> requestedPlugins;
   private final List<String> extraCLIOptions;
   private final List<String> staticNodes;
   private boolean isDnsEnabled = false;
@@ -138,7 +139,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
   public BesuNode(
       final String name,
       final Optional<Path> dataPath,
-      final MiningParameters miningParameters,
+      final MiningConfiguration miningConfiguration,
       final TransactionPoolConfiguration txPoolConfiguration,
       final JsonRpcConfiguration jsonRpcConfiguration,
       final Optional<JsonRpcConfiguration> engineRpcConfiguration,
@@ -163,6 +164,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
       final boolean secp256k1Native,
       final boolean altbn128Native,
       final List<String> plugins,
+      final List<String> requestedPlugins,
       final List<String> extraCLIOptions,
       final List<String> staticNodes,
       final boolean isDnsEnabled,
@@ -189,7 +191,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
         },
         () -> this.keyPair = KeyPairUtil.loadKeyPair(homeDirectory));
     this.name = name;
-    this.miningParameters = miningParameters;
+    this.miningConfiguration = miningConfiguration;
     this.txPoolConfiguration = txPoolConfiguration;
     this.jsonRpcConfiguration = jsonRpcConfiguration;
     this.engineRpcConfiguration = engineRpcConfiguration;
@@ -224,8 +226,9 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
             LOG.error("Could not find plugin \"{}\" in resources", pluginName);
           }
         });
+    this.requestedPlugins = requestedPlugins;
     engineRpcConfiguration.ifPresent(
-        config -> MergeConfigOptions.setMergeEnabled(config.isEnabled()));
+        config -> MergeConfiguration.setMergeEnabled(config.isEnabled()));
     this.extraCLIOptions = extraCLIOptions;
     this.staticNodes = staticNodes;
     this.isDnsEnabled = isDnsEnabled;
@@ -675,12 +678,12 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
     this.bootnodes.addAll(bootnodes);
   }
 
-  public MiningParameters getMiningParameters() {
-    return miningParameters;
+  public MiningConfiguration getMiningParameters() {
+    return miningConfiguration;
   }
 
-  public void setMiningParameters(final MiningParameters miningParameters) {
-    this.miningParameters = miningParameters;
+  public void setMiningParameters(final MiningConfiguration miningConfiguration) {
+    this.miningConfiguration = miningConfiguration;
   }
 
   public TransactionPoolConfiguration getTransactionPoolConfiguration() {
@@ -736,6 +739,10 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
 
   public List<String> getPlugins() {
     return plugins;
+  }
+
+  public List<String> getRequestedPlugins() {
+    return requestedPlugins;
   }
 
   @Override

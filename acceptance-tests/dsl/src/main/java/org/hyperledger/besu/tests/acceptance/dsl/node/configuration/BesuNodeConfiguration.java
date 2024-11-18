@@ -21,7 +21,7 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.InProcessRpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.JsonRpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.ipc.JsonRpcIpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.websocket.WebSocketConfiguration;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.PrivacyParameters;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPoolConfiguration;
 import org.hyperledger.besu.ethereum.p2p.config.NetworkingConfiguration;
@@ -40,7 +40,7 @@ public class BesuNodeConfiguration {
 
   private final String name;
   private final Optional<Path> dataPath;
-  private final MiningParameters miningParameters;
+  private final MiningConfiguration miningConfiguration;
   private final TransactionPoolConfiguration transactionPoolConfiguration;
   private final JsonRpcConfiguration jsonRpcConfiguration;
   private final Optional<JsonRpcConfiguration> engineRpcConfiguration;
@@ -64,6 +64,7 @@ public class BesuNodeConfiguration {
   private final boolean secp256k1Native;
   private final boolean altbn128Native;
   private final List<String> plugins;
+  private final List<String> requestedPlugins;
   private final List<String> extraCLIOptions;
   private final List<String> staticNodes;
   private final boolean isDnsEnabled;
@@ -77,7 +78,7 @@ public class BesuNodeConfiguration {
   BesuNodeConfiguration(
       final String name,
       final Optional<Path> dataPath,
-      final MiningParameters miningParameters,
+      final MiningConfiguration miningConfiguration,
       final TransactionPoolConfiguration transactionPoolConfiguration,
       final JsonRpcConfiguration jsonRpcConfiguration,
       final Optional<JsonRpcConfiguration> engineRpcConfiguration,
@@ -102,6 +103,7 @@ public class BesuNodeConfiguration {
       final boolean secp256k1Native,
       final boolean altbn128Native,
       final List<String> plugins,
+      final List<String> requestedPlugins,
       final List<String> extraCLIOptions,
       final List<String> staticNodes,
       final boolean isDnsEnabled,
@@ -111,7 +113,7 @@ public class BesuNodeConfiguration {
       final boolean strictTxReplayProtectionEnabled,
       final Map<String, String> environment) {
     this.name = name;
-    this.miningParameters = miningParameters;
+    this.miningConfiguration = miningConfiguration;
     this.transactionPoolConfiguration = transactionPoolConfiguration;
     this.jsonRpcConfiguration = jsonRpcConfiguration;
     this.engineRpcConfiguration = engineRpcConfiguration;
@@ -137,6 +139,7 @@ public class BesuNodeConfiguration {
     this.secp256k1Native = secp256k1Native;
     this.altbn128Native = altbn128Native;
     this.plugins = plugins;
+    this.requestedPlugins = requestedPlugins;
     this.extraCLIOptions = extraCLIOptions;
     this.staticNodes = staticNodes;
     this.isDnsEnabled = isDnsEnabled;
@@ -151,8 +154,8 @@ public class BesuNodeConfiguration {
     return name;
   }
 
-  public MiningParameters getMiningParameters() {
-    return miningParameters;
+  public MiningConfiguration getMiningParameters() {
+    return miningConfiguration;
   }
 
   public TransactionPoolConfiguration getTransactionPoolConfiguration() {
@@ -237,6 +240,10 @@ public class BesuNodeConfiguration {
 
   public List<String> getPlugins() {
     return plugins;
+  }
+
+  public List<String> getRequestedPlugins() {
+    return requestedPlugins;
   }
 
   public List<String> getExtraCLIOptions() {
